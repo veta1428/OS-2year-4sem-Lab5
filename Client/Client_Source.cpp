@@ -92,19 +92,6 @@ int main(int argc, char** argv)
             snprintf(buf, strlen(buf), exit_cycle, processId);
             Send((char*)buf, hPipe);
 
-            /*fSuccess = WriteFile(
-                hPipe,
-                buf,
-                strlen(buf) + 1,
-                &cbWritten,
-                NULL);
-
-            if (!fSuccess)
-            {
-                printf("WriteFile to pipe failed. GLE=%d\n", GetLastError());
-                return -1;
-            }*/
-
             return 0;
         }
         else if (strcmp(selected, "4"))
@@ -131,53 +118,6 @@ int main(int argc, char** argv)
         std::cout << chBuf;
         delete[] selected;
     }
-
-    //printf("Sending %d byte message: \"%s\"\n", strlen(text), text);
-
-    //fSuccess = WriteFile(
-    //    hPipe,                  // pipe handle 
-    //    text,             // message 
-    //    strlen(text),              // message length 
-    //    &cbWritten,             // bytes written 
-    //    NULL);                  // not overlapped 
-
-    //if (!fSuccess)
-    //{
-    //    printf("WriteFile to pipe failed. GLE=%d\n", GetLastError());
-    //    return -1;
-    //}
-
-    //printf("\nMessage sent to server, receiving reply as follows:\n");
-
-    //do
-    //{
-    //    // Read from the pipe. 
-
-    //    fSuccess = ReadFile(
-    //        hPipe,    // pipe handle 
-    //        chBuf,    // buffer to receive reply 
-    //        BUFSIZE * sizeof(TCHAR),  // size of buffer 
-    //        &cbRead,  // number of bytes read 
-    //        NULL);    // not overlapped 
-
-    //    if (!fSuccess && GetLastError() != ERROR_MORE_DATA)
-    //        break;
-
-    //    printf("\"%s\"\n", chBuf);
-    //} while (!fSuccess);  // repeat loop if ERROR_MORE_DATA 
-
-    //if (!fSuccess)
-    //{
-    //    printf("ReadFile from pipe failed. GLE=%d\n", GetLastError());
-    //    return -1;
-    //}
-
-
-    //while (true)
-    //{
-
-    //}
-
     return 0;
 }
 

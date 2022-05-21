@@ -214,31 +214,10 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 			break;
 		}
 
-		//const char* request = (const char*)pchRequest;
-		
+		std::cout << "Request from client: " << buf_req;
 		printf(buf_req);
-		// Process the incoming message.
-		//std::vector<std::string> parsed_request = ParsedRequest(buf_req);
 
-		//char* command = (char*)parsed_request[0].c_str();
-		char output[200];
 		ProcessRequest(buf_req, hPipe);
-
-		//GetAnswerToRequest(pchRequest, pchReply, &cbReplyBytes);
-
-		// Write the reply to the pipe. 
-		//fSuccess = WriteFile(
-		//	hPipe,        // handle to pipe 
-		//	"dddd",     // buffer to write from 
-		//	5, // number of bytes to write 
-		//	&cbWritten,   // number of bytes written 
-		//	NULL);        // not overlapped I/O 
-
-		//if (!fSuccess)
-		//{
-		//	printf("InstanceThread WriteFile failed, GLE=%d.\n", GetLastError());
-		//	break;
-		//}
 	}
 
 	// Flush the pipe to allow the client to read the pipe's contents 
