@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <Windows.h>
+#include <vector>
 
 #define BUFSIZE 200
 
@@ -8,6 +9,7 @@ const wchar_t shared_pipe_name[] = TEXT("\\\\.\\pipe\\SERVER_REY_PIPE_%d");
 
 VOID Send(char* response, HANDLE hPipe);
 VOID Receive(char* request, HANDLE hPipe);
+std::vector<std::string> ParsedRequest(char* request);
 
 //requests
 const char get_to_modify[] = "read %d \0";
@@ -80,7 +82,18 @@ int main(int argc, char** argv)
 
         if (strcmp(selected, "1") == 0)
         {
-            Send((char*)get_to_modify, hPipe);
+            char* buf = new char[100];
+            std::cout << "Enter id: ";
+            int id = 0;
+            std::cin >> id;
+            snprintf(buf, 100, get_to_modify, id);
+            std::cout << "\nsending to pipe:" << hPipe << "\n";
+            Send(buf, hPipe);
+            std::cout << "after send";
+            char* response = new char[100];
+            std::cout << "\nreceiving to pipe:" << hPipe << "\n";
+            Receive(response, hPipe);
+            std::cout << "Server responded: " << response << "\n";
         }
         else if (strcmp(selected, "2") == 0)
         {
@@ -91,7 +104,6 @@ int main(int argc, char** argv)
             char buf[100];
             snprintf(buf, strlen(buf), exit_cycle, processId);
             Send((char*)buf, hPipe);
-
             return 0;
         }
         else if (strcmp(selected, "4"))
@@ -108,14 +120,14 @@ int main(int argc, char** argv)
             break;
         }
 
-        fSuccess = ReadFile(
-            hPipe,    // pipe handle 
-            chBuf,    // buffer to receive reply 
-            BUFSIZE * sizeof(char),  // size of buffer 
-            &cbRead,  // number of bytes read 
-            NULL);    // not overlapped 
+        //fSuccess = ReadFile(
+        //    hPipe,    // pipe handle 
+        //    chBuf,    // buffer to receive reply 
+        //    BUFSIZE * sizeof(char),  // size of buffer 
+        //    &cbRead,  // number of bytes read 
+        //    NULL);    // not overlapped 
 
-        std::cout << chBuf;
+        //std::cout << "Server response: " << chBuf;
         delete[] selected;
     }
     return 0;
@@ -140,6 +152,7 @@ VOID Send(char* response, HANDLE hPipe)
 
 VOID Receive(char* request, HANDLE hPipe)
 {
+    std::cout << "receiving";
     DWORD cbBytesRead = 0;
     BOOL fSuccess = ReadFile(
         hPipe,        // handle to pipe 
@@ -156,7 +169,21 @@ VOID Receive(char* request, HANDLE hPipe)
         }
         else
         {
-            std::cout << "InstanceThread ReadFile failed, GLE=%d.\n";
+            std::cout << "InstanceThread ReadFile failed, GLE=%d.\n" << GetLastError();
         }
     }
+}
+
+std::vector<std::string> ParsedRequest(char* request)
+{
+    std::string request_str = std::string(request);
+
+    std::vector<std::string> words{};
+
+    size_t pos = 0;
+    while ((pos = request_str.find(" ")) != std::string::npos) {
+        words.push_back(request_str.substr(0, pos));
+        request_str.erase(0, pos + 1);
+    }
+    return words;
 }

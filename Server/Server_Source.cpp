@@ -2,11 +2,18 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <fstream>
 
 #define BUFSIZE 512
 
 std::vector<HANDLE> hClientsProcess;
 std::vector<HANDLE> hClientsThread;
+
+struct ThreadParams
+{
+	HANDLE hpipe;
+	std::string filename;
+};
 
 //requests
 char get_to_modify[] = "read %d \0";
@@ -30,9 +37,134 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam);
 std::vector<std::string> ParsedRequest(char* request);
 VOID Send(char* response, HANDLE hPipe);
 VOID Receive(char* request, HANDLE hPipe);
-VOID ProcessRequest(char* request, HANDLE hPipe);
+VOID ProcessRequest(char* request, HANDLE hPipe, std::ifstream& fin);
+
+//for file sync
+std::vector<int> readers_counters;
+std::vector<HANDLE> hModifyResourceMutex;
+std::vector<HANDLE> hModifyCounterMutex;
+
+struct Employee
+{
+	int ID;
+	char name[10];
+	double hours;
+};
+
+void Write(int i, Employee newEmployee, std::ifstream fin)
+{
+	WaitForSingleObject(hModifyResourceMutex[i], INFINITE);
+
+	//write
+
+
+	ReleaseMutex(hModifyResourceMutex[i]);
+}
+
+Employee Read_Block(int i, int ID, std::ifstream& fin)
+{
+	WaitForSingleObject(hModifyCounterMutex[i], INFINITE);
+	readers_counters[i]++;
+	if (readers_counters[i] == 1)
+		WaitForSingleObject(hModifyResourceMutex[i], INFINITE); //wait to read and do not let to write
+	ReleaseMutex(hModifyCounterMutex[i]);
+
+	//read
+	fin.seekg(sizeof(Employee) * i);
+	Employee e;
+	fin.read((char*) & e, sizeof(Employee));
+
+	return e;
+}
+
+void Read_Release(int i, int ID, std::ifstream& fin)
+{
+	WaitForSingleObject(hModifyCounterMutex[i], INFINITE);
+	readers_counters[i]++;
+	if (readers_counters[i] == 0)
+		ReleaseMutex(hModifyResourceMutex[i]); //let writers write
+	ReleaseMutex(hModifyCounterMutex[i]);
+}
+
 
 int main() {
+
+	//File
+	int lastUsedId = 0;
+	std::ofstream out;
+	std::string filename;
+	std::cout << "Hi! I am server! Please, enter FILE NAME for employee data:\n";
+	std::cin >> filename;
+	out.open(filename, std::ofstream::binary | std::ofstream::trunc);
+
+	int amountOfRecords = 0;
+	std::cout << "Please, enter amount of records: ";
+	std::cin >> amountOfRecords;
+
+	for (size_t i = 0; i < amountOfRecords; i++)
+	{
+		Employee e;
+		lastUsedId++;
+		std::cout << "Employee #" << lastUsedId << "\nName: ";
+		std::string name;
+		std::cin >> name;
+
+		int max = 10;
+		if (name.size() < 10)
+			max = name.size();
+
+		for (size_t k = 0; k < max; k++)
+			e.name[k] = name[k];
+		for (size_t k = max; k < 10; k++)
+		{
+			e.name[k] = '\0';
+		}
+
+		double hours = 0;
+		std::cout << "Enter hours: ";
+		std::cin >> hours;
+		e.ID = lastUsedId;
+		e.hours = hours;
+
+		out.write((const char*)&e, sizeof(Employee));		
+	}
+
+	out.close();
+	std::cout << "Data successfully writen!\n";
+
+	std::ifstream in;
+	in.open(filename);
+
+	Employee employee;
+
+	std::cout << "\n";
+
+	for (size_t i = 0; i < amountOfRecords; i++)
+	{
+		in.read((char*)&employee, sizeof(Employee));
+		std::cout << "Id:    #" << employee.ID << "\n";
+		std::cout << "Name:  " << employee.name << "\n";
+		std::cout << "Hours: " << employee.hours << "\n\n";
+	}
+
+	in.seekg(0);
+
+	//Initialize mutex
+
+	for (size_t i = 0; i < amountOfRecords; i++)
+	{
+		readers_counters.push_back(0);
+		hModifyResourceMutex.push_back(CreateMutex(
+			NULL,              // default security attributes
+			FALSE,             // initially not owned
+			NULL));
+		hModifyCounterMutex.push_back(CreateMutex(
+			NULL,              // default security attributes
+			FALSE,             // initially not owned
+			NULL));
+	}
+
+	//Client Server
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
 
@@ -77,6 +209,8 @@ int main() {
 
 	for (int i = 0; i < clientsNumber; i++)
 	{
+		ThreadParams* params = new ThreadParams;
+		params->filename = filename;
 		wchar_t buffer[1000];
 		wsprintf(buffer, shared_pipe_name, i + 1);
 
@@ -91,6 +225,8 @@ int main() {
 			BUFSIZE,                  // input buffer size 
 			0,                        // client time-out 
 			NULL);                    // default security attribute 
+
+		params->hpipe = hPipe;
 
 		if (hPipe == INVALID_HANDLE_VALUE)
 		{
@@ -113,9 +249,11 @@ int main() {
 				NULL,              // no security attribute 
 				0,                 // default stack size 
 				InstanceThread,    // thread proc
-				(LPVOID)hPipe,    // thread parameter 
+				(LPVOID)params,    // thread parameter 
 				0,                 // not suspended 
 				&dwThreadId);      // returns thread ID 
+			std::cout << "\n" << params->hpipe << "\n";
+			std::cout << "\n" << params << "\n";
 		}
 		else {
 			std::cout << "Could not connect";
@@ -187,13 +325,17 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 
 	// The thread's parameter is a handle to a pipe object instance. 
 
-	hPipe = (HANDLE)lpvParam;
+	hPipe = ((ThreadParams*)lpvParam)->hpipe;
+	std::string filename = ((ThreadParams*)lpvParam)->filename;
+	std::ifstream fin;
+	fin.open(filename);
 
 	// Loop until done reading
 	while (1)
 	{
 		// Read client requests from the pipe. This simplistic code only allows messages
 		// up to BUFSIZE characters in length.
+		std::cout << "\n reading from pipe " << hPipe << "\n";
 		fSuccess = ReadFile(
 			hPipe,        // handle to pipe 
 			buf_req,    // buffer to receive data 
@@ -215,9 +357,8 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 		}
 
 		std::cout << "Request from client: " << buf_req;
-		printf(buf_req);
 
-		ProcessRequest(buf_req, hPipe);
+		ProcessRequest(buf_req, hPipe, fin);
 	}
 
 	// Flush the pipe to allow the client to read the pipe's contents 
@@ -247,7 +388,7 @@ VOID GetAnswerToRequest(LPTSTR pchRequest,
 	std::cout << "\nrepl func\n";
 }
 
-VOID ProcessRequest(char* request, HANDLE hPipe) 
+VOID ProcessRequest(char* request, HANDLE hPipe, std::ifstream& fin) 
 {
 	char* output = new char[BUFSIZE];
 	std::vector<std::string> parsed_request = ParsedRequest(request);
@@ -256,7 +397,12 @@ VOID ProcessRequest(char* request, HANDLE hPipe)
 
 	if (strncmp(command, get_to_modify, 4) == 0)
 	{
-		Send((char*)"Requested data", hPipe);
+		char buf[200];
+		int id = std::stoi(parsed_request[1]) - 1;
+		Employee e = Read_Block(id, id, fin);
+		snprintf(buf, strlen(buf), record_data, e.ID, e.name, e.hours);
+		std::cout << "\nsending to pipe:" << hPipe<<"\n";
+		Send(buf, hPipe);
 	}
 	else if (strncmp(command, modify, 4) == 0)
 	{
@@ -298,6 +444,7 @@ VOID Send(char* response, HANDLE hPipe)
 {
 	DWORD cbBytesWritten = 0;
 
+	std::cout << "\nsending to pipe:" << hPipe << "\n";
 	BOOL fSuccess = WriteFile(
 		hPipe,        // handle to pipe 
 		response,     // buffer to write from 
