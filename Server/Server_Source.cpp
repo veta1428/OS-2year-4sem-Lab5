@@ -1,11 +1,25 @@
 #include <Windows.h>
 #include <iostream>
 #include <vector>
+#include <string>
 
 #define BUFSIZE 512
 
 std::vector<HANDLE> hClientsProcess;
 std::vector<HANDLE> hClientsThread;
+
+//requests
+char get_to_modify[] = "read %d \0";
+char modify[] = "modw %d %s %f \0";
+char exit_cycle[] = "exit \0";
+char release_read[] = "relr %d \0";
+char release_write[] = "relw %d \0";
+
+//responses
+char record_data[] = "data %d %s %f \0";
+char modif_data_resp[] = "updt %d \0";
+char not_found[] = "404_ \0";
+char server_internal_error[] = "500_ \0";
 
 const wchar_t shared_pipe_name[] = TEXT("\\\\.\\pipe\\SERVER_REY_PIPE_%d");
 
@@ -13,6 +27,10 @@ VOID GetAnswerToRequest(LPTSTR pchRequest,
 	LPTSTR pchReply,
 	LPDWORD pchBytes);
 DWORD WINAPI InstanceThread(LPVOID lpvParam);
+std::vector<std::string> ParsedRequest(char* request);
+VOID Send(char* response, HANDLE hPipe);
+VOID Receive(char* request, HANDLE hPipe);
+VOID ProcessRequest(char* request, HANDLE hPipe);
 
 int main() {
 	STARTUPINFO si;
@@ -127,6 +145,7 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 	HANDLE hHeap = GetProcessHeap();
 	TCHAR* pchRequest = (TCHAR*)HeapAlloc(hHeap, 0, BUFSIZE * sizeof(TCHAR));
 	TCHAR* pchReply = (TCHAR*)HeapAlloc(hHeap, 0, BUFSIZE * sizeof(TCHAR));
+	char buf_req[100];
 
 	DWORD cbBytesRead = 0, cbReplyBytes = 0, cbWritten = 0;
 	BOOL fSuccess = FALSE;
@@ -177,8 +196,8 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 		// up to BUFSIZE characters in length.
 		fSuccess = ReadFile(
 			hPipe,        // handle to pipe 
-			pchRequest,    // buffer to receive data 
-			BUFSIZE * sizeof(TCHAR), // size of buffer 
+			buf_req,    // buffer to receive data 
+			100, // size of buffer 
 			&cbBytesRead, // number of bytes read 
 			NULL);        // not overlapped I/O 
 
@@ -195,25 +214,31 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 			break;
 		}
 
-		const char* request = (const char*)pchRequest;
+		//const char* request = (const char*)pchRequest;
 		
-		printf(request);
+		printf(buf_req);
 		// Process the incoming message.
-		GetAnswerToRequest(pchRequest, pchReply, &cbReplyBytes);
+		//std::vector<std::string> parsed_request = ParsedRequest(buf_req);
+
+		//char* command = (char*)parsed_request[0].c_str();
+		char output[200];
+		ProcessRequest(buf_req, hPipe);
+
+		//GetAnswerToRequest(pchRequest, pchReply, &cbReplyBytes);
 
 		// Write the reply to the pipe. 
-		fSuccess = WriteFile(
-			hPipe,        // handle to pipe 
-			"dddd",     // buffer to write from 
-			5, // number of bytes to write 
-			&cbWritten,   // number of bytes written 
-			NULL);        // not overlapped I/O 
+		//fSuccess = WriteFile(
+		//	hPipe,        // handle to pipe 
+		//	"dddd",     // buffer to write from 
+		//	5, // number of bytes to write 
+		//	&cbWritten,   // number of bytes written 
+		//	NULL);        // not overlapped I/O 
 
-		if (!fSuccess)
-		{
-			printf("InstanceThread WriteFile failed, GLE=%d.\n", GetLastError());
-			break;
-		}
+		//if (!fSuccess)
+		//{
+		//	printf("InstanceThread WriteFile failed, GLE=%d.\n", GetLastError());
+		//	break;
+		//}
 	}
 
 	// Flush the pipe to allow the client to read the pipe's contents 
@@ -241,4 +266,91 @@ VOID GetAnswerToRequest(LPTSTR pchRequest,
 	// and receive other client connections while the instance thread is working.
 {
 	std::cout << "\nrepl func\n";
+}
+
+VOID ProcessRequest(char* request, HANDLE hPipe) 
+{
+	char* output = new char[BUFSIZE];
+	std::vector<std::string> parsed_request = ParsedRequest(request);
+
+	char* command = (char*)parsed_request[0].c_str();
+
+	if (strncmp(command, get_to_modify, 4) == 0)
+	{
+		Send((char*)"Requested data", hPipe);
+	}
+	else if (strncmp(command, modify, 4) == 0)
+	{
+		Send((char*)"Requested modification", hPipe);
+	}
+	else if (strncmp(command, exit_cycle, 4) == 0)
+	{
+		Send((char*)"Requested exit", hPipe);
+	}
+	else if (strncmp(command, release_read, 4) == 0)
+	{
+		Send((char*)"Requested release read", hPipe);
+	}
+	else if (strncmp(command, release_write, 4) == 0)
+	{
+		Send((char*)"Requested release write", hPipe);
+	}
+	else
+	{
+		Send((char*)"400_", hPipe);
+	}
+}
+
+std::vector<std::string> ParsedRequest(char* request) 
+{
+	std::string request_str = std::string(request);
+
+	std::vector<std::string> words{};
+
+	size_t pos = 0;
+	while ((pos = request_str.find(" ")) != std::string::npos) {
+		words.push_back(request_str.substr(0, pos));
+		request_str.erase(0, pos + 1);
+	}
+	return words;
+}
+
+VOID Send(char* response, HANDLE hPipe) 
+{
+	DWORD cbBytesWritten = 0;
+
+	BOOL fSuccess = WriteFile(
+		hPipe,        // handle to pipe 
+		response,     // buffer to write from 
+		strlen(response) + 1, // number of bytes to write 
+		&cbBytesWritten,   // number of bytes written 
+		NULL);        // not overlapped I/O 
+
+	if (!fSuccess)
+	{
+		printf("InstanceThread WriteFile failed, GLE=%d.\n", GetLastError());
+	}
+}
+
+VOID Receive(char* request, HANDLE hPipe) 
+{
+	DWORD cbBytesRead = 0;
+	BOOL fSuccess = ReadFile(
+		hPipe,        // handle to pipe 
+		request,    // buffer to receive data 
+		strlen(request), // size of buffer 
+		&cbBytesRead, // number of bytes read 
+		NULL);        // not overlapped I/O 
+
+	if (!fSuccess || cbBytesRead == 0)
+	{
+		if (GetLastError() == ERROR_BROKEN_PIPE)
+		{
+			std::cout << "InstanceThread: client disconnected.\n";
+		}
+		else
+		{
+			std::cout << "InstanceThread ReadFile failed, GLE=%d.\n";
+		}
+	}
 }
