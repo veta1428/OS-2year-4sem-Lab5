@@ -9,230 +9,220 @@ const wchar_t shared_pipe_name[] = TEXT("\\\\.\\pipe\\SERVER_REY_PIPE_%d");
 
 VOID Send(char* response, HANDLE hPipe);
 VOID Receive(char* request, HANDLE hPipe);
-std::vector<std::string> ParsedRequest(char* request);
 
 //requests
-const char get_to_modify[] = "read %d \0";
-const char modify[] = "modw %d %s %f \0";
-char exit_cycle[] = "exit %d \0";
-char release_read[] = "relr %d \0";
-char release_write[] = "relw %d \0";
-
-//responses
-char record_data[] = "data %d %s %f \0";
-char modif_data_resp[] = "updt %d \0";
-char not_found[] = "404_ \0";
-char bad_request[] = "400_ \0";
+std::string get_to_modify = "read ";
+std::string modify = "modw ";
+std::string exit_cycle = "exit ";
+std::string release_read = "relr ";
+std::string release_write = "relw ";
 
 struct Employee
 {
-    int ID;
-    char name[10];
-    double hours;
+	int ID;
+	char name[10];
+	double hours;
 };
 
 int main(int argc, char** argv)
 {
-    int processId = std::stoi(argv[1]);
-    std::cout << "Hi, I am client #" << processId;
-    HANDLE hPipe;
-    const char* text = "Default message from client.";
+	int processId = std::stoi(argv[1]);
 
-    char chBuf[BUFSIZE];
-    BOOL   fSuccess = FALSE;
-    DWORD  cbRead = 0, cbToWrite = 0, cbWritten = 0, dwMode = 0;
-    wchar_t buffer[1000];
-    wsprintf(buffer, shared_pipe_name, processId);
+	std::cout << "Hi, I am client #" << processId;
+	HANDLE hPipe;
 
-    // Try to open a named pipe; wait for it, if necessary. 
+	BOOL   fSuccess = FALSE;
+	DWORD  cbRead = 0, cbToWrite = 0, cbWritten = 0, dwMode = 0;
+	wchar_t buffer[1000];
+	wsprintf(buffer, shared_pipe_name, processId);
 
+	// Try to open a named pipe; wait for it, if necessary. 
+	while (1)
+	{
+		hPipe = CreateFile(
+			buffer,   // pipe name 
+			GENERIC_READ |  // read and write access 
+			GENERIC_WRITE,
+			0,              // no sharing 
+			NULL,           // default security attributes
+			OPEN_EXISTING,  // opens existing pipe 
+			0,              // default attributes 
+			NULL);          // no template file 
 
-    while (1)
-    {
-        hPipe = CreateFile(
-            buffer,   // pipe name 
-            GENERIC_READ |  // read and write access 
-            GENERIC_WRITE,
-            0,              // no sharing 
-            NULL,           // default security attributes
-            OPEN_EXISTING,  // opens existing pipe 
-            0,              // default attributes 
-            NULL);          // no template file 
+		// Break if the pipe handle is valid. 
+		if (hPipe != INVALID_HANDLE_VALUE)
+			break;
 
-      // Break if the pipe handle is valid. 
+		// retry
+		if (GetLastError() != ERROR_PIPE_BUSY)
+			continue;
 
-        if (hPipe != INVALID_HANDLE_VALUE)
-            break;
+		// All pipe instances are busy, so wait 
+		if (!WaitNamedPipe(buffer, INFINITE))
+		{
+			printf("Could not open pipe: 20 second wait timed out.");
+			return -1;
+		}
+	}
 
-        // Exit if an error other than ERROR_PIPE_BUSY occurs. 
+	while (true)
+	{
+		std::cout << "\nOptions:\n1. Get record by ID\n2. Modify record by ID\n3. Exit\n4. Free reading\n5. Free writing\n6. Draw a line\n";
+		int selected = 0;
+		std::cin >> selected;
 
-        if (GetLastError() != ERROR_PIPE_BUSY)
-        {
-            //std::cout << "Could not open pipe." << GetLastError();
-            continue;
-        }
+		switch (selected)
+		{
+		case 1:
+		{
+			std::cout << "Enter id: ";
+			int id = 0;
+			std::cin >> id;
 
-        // All pipe instances are busy, so wait for 20 seconds. 
+			std::string command = std::string(get_to_modify);
+			std::string request = command
+				.append(std::to_string(id))
+				.append(" \0");
 
-        if (!WaitNamedPipe(buffer, INFINITE))
-        {
-            printf("Could not open pipe: 20 second wait timed out.");
-            return -1;
-        }
-    }
+			Send((char*)request.c_str(), hPipe);
 
-    while (true) 
-    {
-        std::cout << "\nOptions:\n1. Get record by ID\n2. Modify record by ID\n3. Exit\n4. Free reading\n5. Free writing\n";
-        char* selected = new char[100];
-        std::cin >> selected;
+			char* response = new char[100];
+			Receive(response, hPipe);
+			std::cout << "Server responded: " << response << "\n";
 
-        if (strcmp(selected, "1") == 0)
-        {
-            char* buf = new char[100];
-            std::cout << "Enter id: ";
-            int id = 0;
-            std::cin >> id;
-            snprintf(buf, 100, get_to_modify, id);
-            //std::cout << "\nsending to pipe:" << hPipe << "\n";
-            Send(buf, hPipe);
-            //std::cout << "after send";
-            char* response = new char[100];
-            //std::cout << "\nreceiving to pipe:" << hPipe << "\n";
-            Receive(response, hPipe);
-            std::cout << "Server responded: " << response << "\n";
-        }
-        else if (strcmp(selected, "2") == 0)
-        {
-            char* buf = new char[100];
-            Employee e;
-            std::cout << "Enter data to modify:\nId: ";
-            int id = 0;
-            std::cin >> id;
-            e.ID = id;
-            std::cout << "Name: ";
-            std::string name;
-            std::cin >> name;
+			break;
+		}
+		case 2:
+		{
+			Employee e;
+			std::cout << "Enter data to modify:\nId: ";
+			int id = 0;
+			std::cin >> id;
+			e.ID = id;
+			std::cout << "Name: ";
+			std::string name;
+			std::cin >> name;
 
-            int max = 10;
-            if (name.size() < 10)
-                max = name.size();
+			int max = 10;
+			if (name.size() < 10)
+				max = name.size();
 
-            for (size_t k = 0; k < max; k++)
-                e.name[k] = name[k];
-            for (size_t k = max; k < 10; k++)
-            {
-                e.name[k] = '\0';
-            }
+			for (size_t k = 0; k < max; k++)
+				e.name[k] = name[k];
+			for (size_t k = max; k < 10; k++)
+			{
+				e.name[k] = '\0';
+			}
 
-            double hours = 0;
-            std::cout << "Enter hours: ";
-            std::cin >> hours;
-            e.hours = hours;
-            snprintf(buf, strlen(buf), modify, e.ID, e.name, e.hours);
-            Send((char*)buf, hPipe);
-            char* response = new char[100];
-            Receive(response, hPipe);
-            std::cout << "Server responded: " << response << "\n";
-        }
-        else if (strcmp(selected, "3") == 0)
-        {
-            char buf[100];
-            snprintf(buf, strlen(buf), exit_cycle, processId);
-            Send((char*)buf, hPipe);
-            return 0;
-        }
-        else if (strcmp(selected, "4") == 0)
-        {
-            char buf[100];
-            std::cout << "Enter id: ";
-            int id = 0;
-            std::cin >> id;
-            snprintf(buf, strlen(buf), release_read, id);
-            Send((char*)buf, hPipe);
-        }
-        else if (strcmp(selected, "5") == 0)
-        {
-            char buf[100];
-            std::cout << "Enter id: ";
-            int id = 0;
-            std::cin >> id;
-            snprintf(buf, strlen(buf), release_write, id);
-            Send((char*)buf, hPipe);
-        }
-        else 
-        {
-            std::cout << "Sorry cannot understand your option!\n";
-            break;
-        }
+			double hours = 0;
+			std::cout << "Enter hours: ";
+			std::cin >> hours;
+			e.hours = hours;
 
-        //fSuccess = ReadFile(
-        //    hPipe,    // pipe handle 
-        //    chBuf,    // buffer to receive reply 
-        //    BUFSIZE * sizeof(char),  // size of buffer 
-        //    &cbRead,  // number of bytes read 
-        //    NULL);    // not overlapped 
+			std::string command = std::string(modify);
+			std::string request = command
+				.append(std::to_string(e.ID))
+				.append(" ")
+				.append(e.name)
+				.append(" ")
+				.append(std::to_string(e.hours))
+				.append(" \0");
 
-        //std::cout << "Server response: " << chBuf;
-        delete[] selected;
-    }
-    while (true) {
+			Send((char*)request.c_str(), hPipe);
 
-    }
-    return 0;
+			char* response = new char[100];
+			Receive(response, hPipe);
+			std::cout << "Server responded: " << response << "\n";
+			break;
+		}
+		case 3:
+		{
+			std::string command = std::string(exit_cycle);
+			Send((char*)command.c_str(), hPipe);
+			return 0;
+		}
+		case 4:
+		{
+			std::cout << "Enter id: ";
+			int id = 0;
+			std::cin >> id;
+
+			std::string command = std::string(release_read);
+			std::string request = command
+				.append(std::to_string(id))
+				.append(" \0");
+
+			Send((char*)request.c_str(), hPipe);
+
+			char* response = new char[100];
+			Receive(response, hPipe);
+			std::cout << "Server responded: " << response << "\n";
+			break;
+		}
+		case 5:
+		{
+			char buf[100];
+			std::cout << "Enter id: ";
+			int id = 0;
+			std::cin >> id;
+
+			std::string command = std::string(release_write);
+			std::string request = command
+				.append(std::to_string(id))
+				.append(" \0");
+
+			Send((char*)request.c_str(), hPipe);
+
+			char* response = new char[100];
+			Receive(response, hPipe);
+			std::cout << "Server responded: " << response << "\n";
+			break;
+		}
+		case 6:
+		{
+			std::cout << "\n_____________________________________________________________________\n";
+			break;
+		}
+		default:
+			std::cout << "Sorry, I do not understand you(";
+			break;
+		}
+	}
+	while (true) {
+
+	}
+	return 0;
 }
 
 VOID Send(char* response, HANDLE hPipe)
 {
-    DWORD cbBytesWritten = 0;
+	DWORD cbBytesWritten = 0;
+	BOOL fSuccess = WriteFile(
+		hPipe,        // handle to pipe 
+		response,     // buffer to write from 
+		strlen(response) + 1, // number of bytes to write 
+		&cbBytesWritten,   // number of bytes written 
+		NULL);        // not overlapped I/O 
 
-    BOOL fSuccess = WriteFile(
-        hPipe,        // handle to pipe 
-        response,     // buffer to write from 
-        strlen(response) + 1, // number of bytes to write 
-        &cbBytesWritten,   // number of bytes written 
-        NULL);        // not overlapped I/O 
-
-    if (!fSuccess)
-    {
-        printf("InstanceThread WriteFile failed, GLE=%d.\n", GetLastError());
-    }
+	if (!fSuccess)
+		printf("InstanceThread WriteFile failed, GLE=%d.\n", GetLastError());
 }
 
 VOID Receive(char* request, HANDLE hPipe)
 {
-    //std::cout << "receiving";
-    DWORD cbBytesRead = 0;
-    BOOL fSuccess = ReadFile(
-        hPipe,        // handle to pipe 
-        request,    // buffer to receive data 
-        strlen(request), // size of buffer 
-        &cbBytesRead, // number of bytes read 
-        NULL);        // not overlapped I/O 
+	DWORD cbBytesRead = 0;
+	BOOL fSuccess = ReadFile(
+		hPipe,        // handle to pipe 
+		request,    // buffer to receive data 
+		BUFSIZE, // size of buffer 
+		&cbBytesRead, // number of bytes read 
+		NULL);        // not overlapped I/O 
 
-    if (!fSuccess || cbBytesRead == 0)
-    {
-        if (GetLastError() == ERROR_BROKEN_PIPE)
-        {
-            std::cout << "InstanceThread: client disconnected.\n";
-        }
-        else
-        {
-            std::cout << "InstanceThread ReadFile failed, GLE=%d.\n" << GetLastError();
-        }
-    }
-}
-
-std::vector<std::string> ParsedRequest(char* request)
-{
-    std::string request_str = std::string(request);
-
-    std::vector<std::string> words{};
-
-    size_t pos = 0;
-    while ((pos = request_str.find(" ")) != std::string::npos) {
-        words.push_back(request_str.substr(0, pos));
-        request_str.erase(0, pos + 1);
-    }
-    return words;
+	if (!fSuccess || cbBytesRead == 0)
+	{
+		if (GetLastError() == ERROR_BROKEN_PIPE)
+			std::cout << "InstanceThread: client disconnected.\n";
+		else
+			std::cout << "InstanceThread ReadFile failed, GLE = " << GetLastError() << "\n";
+	}
 }

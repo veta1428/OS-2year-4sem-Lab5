@@ -1,0 +1,10 @@
+﻿  Client_Source.cpp
+D:\Liza\university2year\sem4\OS\Lab5_2attempt\Client\Client_Source.cpp(108,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+D:\Liza\university2year\sem4\OS\Lab5_2attempt\Client\Client_Source.cpp(164,9): warning C4101: 'buf': unreferenced local variable
+D:\Liza\university2year\sem4\OS\Lab5_2attempt\Client\Client_Source.cpp(205,7): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+  Generating code
+  1 of 170 functions ( 0.6%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    1 functions had inline decision re-evaluated but remain unchanged
+  Finished generating code
+  Client.vcxproj -> D:\Liza\university2year\sem4\OS\Lab5_2attempt\Server\x64\Release\Client.exe

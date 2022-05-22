@@ -25,7 +25,7 @@ char release_read[] = "relr %d \0";
 char release_write[] = "relw %d \0";
 
 //responses
-char record_data[] = "data %d %s %f \0";
+std::string data = "data ";
 char modif_data_resp[] = "updt %d \0";
 char not_found[] = "404_ \0";
 char server_internal_error[] = "500_ \0";
@@ -404,14 +404,14 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 
 VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clientID, bool& isReading) 
 {
-	char* output = new char[BUFSIZE];
+	char* output = new char[BUFSIZE] {0};
 	std::vector<std::string> parsed_request = ParsedRequest(request);
 
 	char* command = (char*)parsed_request[0].c_str();
 
 	if (strncmp(command, get_to_modify, 4) == 0)
 	{
-		char buf[200];
+		char* buf = new char[100]{ 1 };
 		int id = std::stoi(parsed_request[1]) - 1;
 		if (id < 0 || id >= recordsNumber)
 		{
@@ -420,10 +420,17 @@ VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clien
 			return;
 		}
 		Employee e = Read_Block(id, id, filename, isReading);
-		snprintf(buf, strlen(buf), record_data, e.ID, e.name, e.hours);
-		//std::cout << "\nsending to pipe:" << hPipe<<"\n";
-		std::cout << "For client " << clientID << " request: \"" << request << "\" sending response: " << buf << "\n";
-		Send(buf, hPipe);
+		std::string command = std::string(data);
+		std::string response = command
+			.append(std::to_string(e.ID))
+			.append(" ")
+			.append(e.name)
+			.append(" ")
+			.append(std::to_string(e.hours))
+			.append(" \0");
+
+		std::cout << "For client " << clientID << " request: \"" << request << "\" sending response: " << response << "\n";
+		Send((char*)response.c_str(), hPipe);
 	}
 	else if (strncmp(command, modify, 4) == 0)
 	{
@@ -451,7 +458,7 @@ VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clien
 	}
 	else if (strncmp(command, release_read, 4) == 0)
 	{
-		char buf[200];
+		char buf[200]{0};
 		int id = std::stoi(parsed_request[1]) - 1;
 		if (id < 0 || id >= recordsNumber)
 		{
@@ -466,7 +473,7 @@ VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clien
 	}
 	else if (strncmp(command, release_write, 4) == 0)
 	{
-		char buf[200];
+		char buf[200]{0};
 		int id = std::stoi(parsed_request[1]) - 1;
 		if (id < 0 || id >= recordsNumber)
 		{
@@ -475,8 +482,6 @@ VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clien
 			return;
 		}
 		Write_Release(id);
-		//snprintf(buf, strlen(buf), release_read, id);
-		//Send((char*)buf, hPipe);
 		std::cout << "For client " << clientID << " request: \"" << request << "\" sending response: " << ok << "\n";
 		Send((char*)ok, hPipe);
 	}
@@ -507,8 +512,6 @@ std::vector<std::string> ParsedRequest(char* request)
 VOID Send(char* response, HANDLE hPipe) 
 {
 	DWORD cbBytesWritten = 0;
-
-	//std::cout << "\nsending to pipe:" << hPipe << "\n";
 	BOOL fSuccess = WriteFile(
 		hPipe,        // handle to pipe 
 		response,     // buffer to write from 
