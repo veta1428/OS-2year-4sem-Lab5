@@ -142,7 +142,7 @@ int main(int argc, char** argv)
             Send((char*)buf, hPipe);
             return 0;
         }
-        else if (strcmp(selected, "4"))
+        else if (strcmp(selected, "4") == 0)
         {
             char buf[100];
             std::cout << "Enter id: ";
@@ -151,7 +151,7 @@ int main(int argc, char** argv)
             snprintf(buf, strlen(buf), release_read, id);
             Send((char*)buf, hPipe);
         }
-        else if (strcmp(selected, "5"))
+        else if (strcmp(selected, "5") == 0)
         {
             char buf[100];
             std::cout << "Enter id: ";
