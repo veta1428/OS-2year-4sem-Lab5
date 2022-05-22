@@ -24,6 +24,13 @@ char modif_data_resp[] = "updt %d \0";
 char not_found[] = "404_ \0";
 char bad_request[] = "400_ \0";
 
+struct Employee
+{
+    int ID;
+    char name[10];
+    double hours;
+};
+
 int main(int argc, char** argv)
 {
     int processId = std::stoi(argv[1]);
@@ -61,13 +68,13 @@ int main(int argc, char** argv)
 
         if (GetLastError() != ERROR_PIPE_BUSY)
         {
-            std::cout << "Could not open pipe." << GetLastError();
-            return -1;
+            //std::cout << "Could not open pipe." << GetLastError();
+            continue;
         }
 
         // All pipe instances are busy, so wait for 20 seconds. 
 
-        if (!WaitNamedPipe(buffer, 20000))
+        if (!WaitNamedPipe(buffer, INFINITE))
         {
             printf("Could not open pipe: 20 second wait timed out.");
             return -1;
@@ -87,17 +94,46 @@ int main(int argc, char** argv)
             int id = 0;
             std::cin >> id;
             snprintf(buf, 100, get_to_modify, id);
-            std::cout << "\nsending to pipe:" << hPipe << "\n";
+            //std::cout << "\nsending to pipe:" << hPipe << "\n";
             Send(buf, hPipe);
-            std::cout << "after send";
+            //std::cout << "after send";
             char* response = new char[100];
-            std::cout << "\nreceiving to pipe:" << hPipe << "\n";
+            //std::cout << "\nreceiving to pipe:" << hPipe << "\n";
             Receive(response, hPipe);
             std::cout << "Server responded: " << response << "\n";
         }
         else if (strcmp(selected, "2") == 0)
         {
-            Send((char*)modify, hPipe);
+            char* buf = new char[100];
+            Employee e;
+            std::cout << "Enter data to modify:\nId: ";
+            int id = 0;
+            std::cin >> id;
+            e.ID = id;
+            std::cout << "Name: ";
+            std::string name;
+            std::cin >> name;
+
+            int max = 10;
+            if (name.size() < 10)
+                max = name.size();
+
+            for (size_t k = 0; k < max; k++)
+                e.name[k] = name[k];
+            for (size_t k = max; k < 10; k++)
+            {
+                e.name[k] = '\0';
+            }
+
+            double hours = 0;
+            std::cout << "Enter hours: ";
+            std::cin >> hours;
+            e.hours = hours;
+            snprintf(buf, strlen(buf), modify, e.ID, e.name, e.hours);
+            Send((char*)buf, hPipe);
+            char* response = new char[100];
+            Receive(response, hPipe);
+            std::cout << "Server responded: " << response << "\n";
         }
         else if (strcmp(selected, "3") == 0)
         {
@@ -108,11 +144,21 @@ int main(int argc, char** argv)
         }
         else if (strcmp(selected, "4"))
         {
-            Send((char*)release_read, hPipe);
+            char buf[100];
+            std::cout << "Enter id: ";
+            int id = 0;
+            std::cin >> id;
+            snprintf(buf, strlen(buf), release_read, id);
+            Send((char*)buf, hPipe);
         }
         else if (strcmp(selected, "5"))
         {
-            Send((char*)release_write, hPipe);
+            char buf[100];
+            std::cout << "Enter id: ";
+            int id = 0;
+            std::cin >> id;
+            snprintf(buf, strlen(buf), release_write, id);
+            Send((char*)buf, hPipe);
         }
         else 
         {
@@ -129,6 +175,9 @@ int main(int argc, char** argv)
 
         //std::cout << "Server response: " << chBuf;
         delete[] selected;
+    }
+    while (true) {
+
     }
     return 0;
 }
@@ -152,7 +201,7 @@ VOID Send(char* response, HANDLE hPipe)
 
 VOID Receive(char* request, HANDLE hPipe)
 {
-    std::cout << "receiving";
+    //std::cout << "receiving";
     DWORD cbBytesRead = 0;
     BOOL fSuccess = ReadFile(
         hPipe,        // handle to pipe 

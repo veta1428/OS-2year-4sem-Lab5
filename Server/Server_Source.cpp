@@ -1,3 +1,4 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include <Windows.h>
 #include <iostream>
 #include <vector>
@@ -13,6 +14,7 @@ struct ThreadParams
 {
 	HANDLE hpipe;
 	std::string filename;
+	int clientId;
 };
 
 //requests
@@ -27,17 +29,15 @@ char record_data[] = "data %d %s %f \0";
 char modif_data_resp[] = "updt %d \0";
 char not_found[] = "404_ \0";
 char server_internal_error[] = "500_ \0";
+char ok[] = "200_ \0";
 
 const wchar_t shared_pipe_name[] = TEXT("\\\\.\\pipe\\SERVER_REY_PIPE_%d");
 
-VOID GetAnswerToRequest(LPTSTR pchRequest,
-	LPTSTR pchReply,
-	LPDWORD pchBytes);
 DWORD WINAPI InstanceThread(LPVOID lpvParam);
 std::vector<std::string> ParsedRequest(char* request);
 VOID Send(char* response, HANDLE hPipe);
 VOID Receive(char* request, HANDLE hPipe);
-VOID ProcessRequest(char* request, HANDLE hPipe, std::ifstream& fin);
+VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clientID);
 
 //for file sync
 std::vector<int> readers_counters;
@@ -51,36 +51,45 @@ struct Employee
 	double hours;
 };
 
-void Write(int i, Employee newEmployee, std::ifstream fin)
+void Write_Block(int i, Employee newEmployee, std::string filename)
 {
-	WaitForSingleObject(hModifyResourceMutex[i], INFINITE);
+	auto res = WaitForSingleObject(hModifyResourceMutex[i], INFINITE);
 
-	//write
+	std::ofstream fout;
+	fout.open(filename, std::ofstream::binary);
 
+	fout.seekp(sizeof(Employee) * i, std::ios::beg);
+	fout.write((const char*)&newEmployee, sizeof(Employee));
+	fout.close();
+}
 
+void Write_Release(int i) 
+{
 	ReleaseMutex(hModifyResourceMutex[i]);
 }
 
-Employee Read_Block(int i, int ID, std::ifstream& fin)
+Employee Read_Block(int i, int ID, std::string filename)
 {
 	WaitForSingleObject(hModifyCounterMutex[i], INFINITE);
 	readers_counters[i]++;
 	if (readers_counters[i] == 1)
 		WaitForSingleObject(hModifyResourceMutex[i], INFINITE); //wait to read and do not let to write
 	ReleaseMutex(hModifyCounterMutex[i]);
+	std::ifstream fin;
+	fin.open(filename);
 
 	//read
 	fin.seekg(sizeof(Employee) * i);
 	Employee e;
 	fin.read((char*) & e, sizeof(Employee));
-
+	fin.close();
 	return e;
 }
 
-void Read_Release(int i, int ID, std::ifstream& fin)
+void Read_Release(int i)
 {
 	WaitForSingleObject(hModifyCounterMutex[i], INFINITE);
-	readers_counters[i]++;
+	readers_counters[i]--;
 	if (readers_counters[i] == 0)
 		ReleaseMutex(hModifyResourceMutex[i]); //let writers write
 	ReleaseMutex(hModifyCounterMutex[i]);
@@ -227,6 +236,7 @@ int main() {
 			NULL);                    // default security attribute 
 
 		params->hpipe = hPipe;
+		params->clientId = i + 1;
 
 		if (hPipe == INVALID_HANDLE_VALUE)
 		{
@@ -243,7 +253,7 @@ int main() {
 
 		if (fConnected)
 		{
-			std::cout << "Connected to pipe :" << i + 1 <<"\n";
+			//std::cout << "Connected to pipe :" << i + 1 <<"\n";
 
 			hThread = CreateThread(
 				NULL,              // no security attribute 
@@ -252,8 +262,8 @@ int main() {
 				(LPVOID)params,    // thread parameter 
 				0,                 // not suspended 
 				&dwThreadId);      // returns thread ID 
-			std::cout << "\n" << params->hpipe << "\n";
-			std::cout << "\n" << params << "\n";
+			//std::cout << "\n" << params->hpipe << "\n";
+			//std::cout << "\n" << params << "\n";
 		}
 		else {
 			std::cout << "Could not connect";
@@ -278,64 +288,68 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 // of this procedure to run concurrently, depending on the number of incoming
 // client connections.
 {
-	std::cout << "Just created";
 	//std::cout << GetLastError();
-	HANDLE hHeap = GetProcessHeap();
-	TCHAR* pchRequest = (TCHAR*)HeapAlloc(hHeap, 0, BUFSIZE * sizeof(TCHAR));
-	TCHAR* pchReply = (TCHAR*)HeapAlloc(hHeap, 0, BUFSIZE * sizeof(TCHAR));
+	//HANDLE hHeap = GetProcessHeap();
+	//TCHAR* pchRequest = (TCHAR*)HeapAlloc(hHeap, 0, BUFSIZE * sizeof(TCHAR));
+	//TCHAR* pchReply = (TCHAR*)HeapAlloc(hHeap, 0, BUFSIZE * sizeof(TCHAR));
 	char buf_req[100];
 
 	DWORD cbBytesRead = 0, cbReplyBytes = 0, cbWritten = 0;
 	BOOL fSuccess = FALSE;
 	HANDLE hPipe = NULL;
 
-	// Do some extra error checking since the app will keep running even if this
-	// thread fails.
+	//// Do some extra error checking since the app will keep running even if this
+	//// thread fails.
 
-	if (lpvParam == NULL)
-	{
-		printf("\nERROR - Pipe Server Failure:\n");
-		printf("   InstanceThread got an unexpected NULL value in lpvParam.\n");
-		printf("   InstanceThread exitting.\n");
-		if (pchReply != NULL) HeapFree(hHeap, 0, pchReply);
-		if (pchRequest != NULL) HeapFree(hHeap, 0, pchRequest);
-		return (DWORD)-1;
-	}
+	//if (lpvParam == NULL)
+	//{
+	//	printf("\nERROR - Pipe Server Failure:\n");
+	//	printf("   InstanceThread got an unexpected NULL value in lpvParam.\n");
+	//	printf("   InstanceThread exitting.\n");
+	//	if (pchReply != NULL) HeapFree(hHeap, 0, pchReply);
+	//	if (pchRequest != NULL) HeapFree(hHeap, 0, pchRequest);
+	//	return (DWORD)-1;
+	//}
 
-	if (pchRequest == NULL)
-	{
-		printf("\nERROR - Pipe Server Failure:\n");
-		printf("   InstanceThread got an unexpected NULL heap allocation.\n");
-		printf("   InstanceThread exitting.\n");
-		if (pchReply != NULL) HeapFree(hHeap, 0, pchReply);
-		return (DWORD)-1;
-	}
+	//if (pchRequest == NULL)
+	//{
+	//	printf("\nERROR - Pipe Server Failure:\n");
+	//	printf("   InstanceThread got an unexpected NULL heap allocation.\n");
+	//	printf("   InstanceThread exitting.\n");
+	//	if (pchReply != NULL) HeapFree(hHeap, 0, pchReply);
+	//	return (DWORD)-1;
+	//}
 
-	if (pchReply == NULL)
-	{
-		printf("\nERROR - Pipe Server Failure:\n");
-		printf("   InstanceThread got an unexpected NULL heap allocation.\n");
-		printf("   InstanceThread exitting.\n");
-		if (pchRequest != NULL) HeapFree(hHeap, 0, pchRequest);
-		return (DWORD)-1;
-	}
+	//if (pchReply == NULL)
+	//{
+	//	printf("\nERROR - Pipe Server Failure:\n");
+	//	printf("   InstanceThread got an unexpected NULL heap allocation.\n");
+	//	printf("   InstanceThread exitting.\n");
+	//	if (pchRequest != NULL) HeapFree(hHeap, 0, pchRequest);
+	//	return (DWORD)-1;
+	//}
 
-	// Print verbose messages. In production code, this should be for debugging only.
-	printf("InstanceThread created, receiving and processing messages.\n");
+	//// Print verbose messages. In production code, this should be for debugging only.
+	//printf("InstanceThread created, receiving and processing messages.\n");
 
-	// The thread's parameter is a handle to a pipe object instance. 
+	//// The thread's parameter is a handle to a pipe object instance. 
 
 	hPipe = ((ThreadParams*)lpvParam)->hpipe;
 	std::string filename = ((ThreadParams*)lpvParam)->filename;
+	int clientId = ((ThreadParams*)lpvParam)->clientId;
 	std::ifstream fin;
 	fin.open(filename);
+	std::cout << "Running thread for serving client: " << clientId << "\n";
+
+	std::ofstream fout;
+	fout.open(filename, std::ofstream::binary | std::ofstream::app);
 
 	// Loop until done reading
 	while (1)
 	{
 		// Read client requests from the pipe. This simplistic code only allows messages
 		// up to BUFSIZE characters in length.
-		std::cout << "\n reading from pipe " << hPipe << "\n";
+		//std::cout << "\n reading from pipe " << hPipe << "\n";
 		fSuccess = ReadFile(
 			hPipe,        // handle to pipe 
 			buf_req,    // buffer to receive data 
@@ -356,9 +370,9 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 			break;
 		}
 
-		std::cout << "Request from client: " << buf_req;
+		std::cout << "Request from client " << clientId << " is: \"" << buf_req << "\"\n";
 
-		ProcessRequest(buf_req, hPipe, fin);
+		ProcessRequest(buf_req, hPipe, filename, clientId);
 	}
 
 	// Flush the pipe to allow the client to read the pipe's contents 
@@ -369,26 +383,14 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 	DisconnectNamedPipe(hPipe);
 	CloseHandle(hPipe);
 
-	HeapFree(hHeap, 0, pchRequest);
-	HeapFree(hHeap, 0, pchReply);
-
-	printf("InstanceThread exiting.\n");
+	/*HeapFree(hHeap, 0, pchRequest);
+	HeapFree(hHeap, 0, pchReply);*/
+	std::cout << "End of work with client: " << clientId << "\n";
+	//printf("InstanceThread exiting.\n");
 	return 1;
 }
 
-VOID GetAnswerToRequest(LPTSTR pchRequest,
-	LPTSTR pchReply,
-	LPDWORD pchBytes)
-	// This routine is a simple function to print the client request to the console
-	// and populate the reply buffer with a default data string. This is where you
-	// would put the actual client request processing code that runs in the context
-	// of an instance thread. Keep in mind the main thread will continue to wait for
-	// and receive other client connections while the instance thread is working.
-{
-	std::cout << "\nrepl func\n";
-}
-
-VOID ProcessRequest(char* request, HANDLE hPipe, std::ifstream& fin) 
+VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clientID) 
 {
 	char* output = new char[BUFSIZE];
 	std::vector<std::string> parsed_request = ParsedRequest(request);
@@ -399,14 +401,25 @@ VOID ProcessRequest(char* request, HANDLE hPipe, std::ifstream& fin)
 	{
 		char buf[200];
 		int id = std::stoi(parsed_request[1]) - 1;
-		Employee e = Read_Block(id, id, fin);
+		Employee e = Read_Block(id, id, filename);
 		snprintf(buf, strlen(buf), record_data, e.ID, e.name, e.hours);
-		std::cout << "\nsending to pipe:" << hPipe<<"\n";
+		//std::cout << "\nsending to pipe:" << hPipe<<"\n";
+		std::cout << "For client " << clientID << " request: \"" << request << "\" sending response: " << buf << "\n";
 		Send(buf, hPipe);
 	}
 	else if (strncmp(command, modify, 4) == 0)
 	{
-		Send((char*)"Requested modification", hPipe);
+		int id = std::stoi(parsed_request[1]) - 1;
+		char* name = (char*)(parsed_request[2]).c_str();
+		double hours = std::stod(parsed_request[3]);
+		Employee e;
+		e.ID = id + 1;
+		strcpy(e.name, name);
+		e.hours = hours;
+
+		Write_Block(id, e, filename);
+		std::cout << "For client " << clientID << " request: \"" << request << "\" sending response: " << ok << "\n";
+		Send((char*)ok, hPipe);
 	}
 	else if (strncmp(command, exit_cycle, 4) == 0)
 	{
@@ -414,11 +427,22 @@ VOID ProcessRequest(char* request, HANDLE hPipe, std::ifstream& fin)
 	}
 	else if (strncmp(command, release_read, 4) == 0)
 	{
-		Send((char*)"Requested release read", hPipe);
+		char buf[200];
+		int id = std::stoi(parsed_request[1]) - 1;
+		Read_Release(id);
+		//snprintf(buf, strlen(buf), release_read, id);
+		std::cout << "For client " << clientID << " request: \"" << request << "\" sending response: " << ok << "\n";
+		Send((char*)ok, hPipe);
 	}
 	else if (strncmp(command, release_write, 4) == 0)
 	{
-		Send((char*)"Requested release write", hPipe);
+		char buf[200];
+		int id = std::stoi(parsed_request[1]) - 1;
+		Write_Release(id);
+		//snprintf(buf, strlen(buf), release_read, id);
+		//Send((char*)buf, hPipe);
+		std::cout << "For client " << clientID << " request: \"" << request << "\" sending response: " << ok << "\n";
+		Send((char*)ok, hPipe);
 	}
 	else
 	{
@@ -444,7 +468,7 @@ VOID Send(char* response, HANDLE hPipe)
 {
 	DWORD cbBytesWritten = 0;
 
-	std::cout << "\nsending to pipe:" << hPipe << "\n";
+	//std::cout << "\nsending to pipe:" << hPipe << "\n";
 	BOOL fSuccess = WriteFile(
 		hPipe,        // handle to pipe 
 		response,     // buffer to write from 

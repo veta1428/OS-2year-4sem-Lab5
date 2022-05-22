@@ -1,5 +1,6 @@
 ﻿  Client_Source.cpp
-D:\Liza\university2year\sem4\OS\Lab5_2attempt\Client\Client_Source.cpp(34,10): warning C4101: 'chBuf': unreferenced local variable
-D:\Liza\university2year\sem4\OS\Lab5_2attempt\Client\Client_Source.cpp(145,13): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
-D:\Liza\university2year\sem4\OS\Lab5_2attempt\Client\Client_Source.cpp(162,13): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+D:\Liza\university2year\sem4\OS\Lab5_2attempt\Client\Client_Source.cpp(119,34): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+D:\Liza\university2year\sem4\OS\Lab5_2attempt\Client\Client_Source.cpp(41,10): warning C4101: 'chBuf': unreferenced local variable
+D:\Liza\university2year\sem4\OS\Lab5_2attempt\Client\Client_Source.cpp(194,13): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+D:\Liza\university2year\sem4\OS\Lab5_2attempt\Client\Client_Source.cpp(211,13): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
   Client.vcxproj -> D:\Liza\university2year\sem4\OS\Lab5_2attempt\Server\x64\Debug\Client.exe
