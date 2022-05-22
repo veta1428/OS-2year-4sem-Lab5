@@ -37,8 +37,9 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam);
 std::vector<std::string> ParsedRequest(char* request);
 VOID Send(char* response, HANDLE hPipe);
 VOID Receive(char* request, HANDLE hPipe);
-VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clientID, bool& isReading);
+VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clientID, std::vector<bool>* isReading, std::vector<bool>* isWriting);
 VOID Respond500(HANDLE hPipe);
+VOID Respond400(HANDLE hPipe);
 
 //for file sync
 std::vector<int> readers_counters;
@@ -54,30 +55,31 @@ struct Employee
 	double hours;
 };
 
-void Write_Block(int i, Employee newEmployee, std::string filename)
+void Write_Block(int i, Employee newEmployee, std::string filename, std::vector<bool>* isWriting)
 {
 	auto res = WaitForSingleObject(hModifyResourceMutex[i], INFINITE);
-
-	std::ofstream fout;
-	fout.open(filename, std::ofstream::binary);
+	(*isWriting)[i] = true;
+	std::fstream fout(filename);
+	//fout.open(filename, std::ofstream::binary);
 
 	fout.seekp(sizeof(Employee) * i, std::ios::beg);
 	fout.write((const char*)&newEmployee, sizeof(Employee));
 	fout.close();
 }
 
-void Write_Release(int i) 
+void Write_Release(int i, std::vector<bool>* isWriting)
 {
+	(*isWriting)[i] = false;
 	ReleaseMutex(hModifyResourceMutex[i]);
 }
 
-Employee Read_Block(int i, int ID, std::string filename, bool& isReading)
+Employee Read_Block(int i, int ID, std::string filename, std::vector<bool>* isReading)
 {
 	WaitForSingleObject(hModifyCounterMutex[i], INFINITE);
-	if (!isReading)
+	if (!(*isReading)[i])
 	{
 		readers_counters[i]++;
-		isReading = true;
+		(*isReading)[i] = true;
 	}
 
 	if (readers_counters[i] == 1)
@@ -94,12 +96,12 @@ Employee Read_Block(int i, int ID, std::string filename, bool& isReading)
 	return e;
 }
 
-void Read_Release(int i, bool& isReading)
+void Read_Release(int i, std::vector<bool>* isReading)
 {
 	WaitForSingleObject(hModifyCounterMutex[i], INFINITE);
-	if (isReading) {
+	if ((*isReading)[i]) {
 		readers_counters[i]--;
-		isReading = false;
+		(*isReading)[i] = false;
 	}
 	if (readers_counters[i] == 0)
 		ReleaseMutex(hModifyResourceMutex[i]); //let writers write
@@ -351,7 +353,14 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 	std::ifstream fin;
 	fin.open(filename);
 	std::cout << "Running thread for serving client: " << clientId << "\n";
-	bool isReading = false;
+	std::vector<bool> isReading;
+	std::vector<bool> isWriting;
+	for (size_t i = 0; i < recordsNumber; i++)
+	{
+		isReading.push_back(false);
+		isWriting.push_back(false);
+	}
+	//bool isReading = false;
 
 	std::ofstream fout;
 	fout.open(filename, std::ofstream::binary | std::ofstream::app);
@@ -384,7 +393,7 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 
 		std::cout << "Request from client " << clientId << " is: \"" << buf_req << "\"\n";
 
-		ProcessRequest(buf_req, hPipe, filename, clientId, isReading);
+		ProcessRequest(buf_req, hPipe, filename, clientId, &isReading, &isWriting);
 	}
 
 	// Flush the pipe to allow the client to read the pipe's contents 
@@ -402,7 +411,7 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 	return 1;
 }
 
-VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clientID, bool& isReading) 
+VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clientID, std::vector<bool>* isReading, std::vector<bool>* isWriting)
 {
 	char* output = new char[BUFSIZE] {0};
 	std::vector<std::string> parsed_request = ParsedRequest(request);
@@ -417,6 +426,11 @@ VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clien
 		{
 			std::cout << "For client " << clientID << " request: \"" << request << "\" sending response: " << server_internal_error << "\n";
 			Respond500(hPipe);
+			return;
+		}
+		if ((*isWriting)[id] == true)
+		{
+			Respond400(hPipe);
 			return;
 		}
 		Employee e = Read_Block(id, id, filename, isReading);
@@ -441,6 +455,11 @@ VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clien
 			Respond500(hPipe);
 			return;
 		}
+		if ((*isReading)[id] == true)
+		{
+			Respond400(hPipe);
+			return;
+		}
 		char* name = (char*)(parsed_request[2]).c_str();
 		double hours = std::stod(parsed_request[3]);
 		Employee e;
@@ -448,7 +467,7 @@ VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clien
 		strcpy(e.name, name);
 		e.hours = hours;
 
-		Write_Block(id, e, filename);
+		Write_Block(id, e, filename, isWriting);
 		std::cout << "For client " << clientID << " request: \"" << request << "\" sending response: " << ok << "\n";
 		Send((char*)ok, hPipe);
 	}
@@ -481,7 +500,7 @@ VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clien
 			Respond500(hPipe);
 			return;
 		}
-		Write_Release(id);
+		Write_Release(id, isWriting);
 		std::cout << "For client " << clientID << " request: \"" << request << "\" sending response: " << ok << "\n";
 		Send((char*)ok, hPipe);
 	}
@@ -493,6 +512,10 @@ VOID ProcessRequest(char* request, HANDLE hPipe, std::string filename, int clien
 
 VOID Respond500(HANDLE hPipe) {
 	Send((char*)"500_", hPipe);
+}
+
+VOID Respond400(HANDLE hPipe) {
+	Send((char*)"400_", hPipe);
 }
 
 std::vector<std::string> ParsedRequest(char* request) 
